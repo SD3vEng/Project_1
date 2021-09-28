@@ -1,6 +1,8 @@
 -
   name: install packages from Centos8
-  hosts: test1
+  hosts:
+    - test1
+    - master
   become: yes
   tasks:
     - name: install packages
@@ -112,8 +114,33 @@
           EOF
           sudo sysctl --system
 
+    - name: Disable swap
+      command: swapoff -a
+
 - name: Configure Master node
-  hosts: Master
+  hosts: master
   become: yes
   tasks:
-    - name:
+    - name: Initialize the Kubernetes cluster using kubeadm
+      command: kubeadm init --pod-network-cidr 10.245.0.0/16 --apiserver-advertise-address=10.70.40.160
+
+    - name: Setup kubeconfig
+      command: "{{ item }}"
+      with_items:
+       - mkdir -p /home/vagrant/.kube
+       - cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+       - chown vagrant:vagrant /home/vagrant/.kube/config
+
+    - name: Kubeadm token
+      command: kubeadm token create --print-join-command
+      register: kubeadm_token
+
+    - name: install weave pod network
+      command: kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+
+- name: Configure worker node
+  hosts: test1
+  become: yes
+  tasks:
+    - name: Print kubeadm token
+      command:  echo "{{ hostvars['master']['kubeadm_token']['stdout'] }}"
