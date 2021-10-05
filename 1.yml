@@ -1,0 +1,39 @@
+    - name: Enable firewalld service
+      systemd:
+        state: restarted
+        daemon_reload: yes
+        name: firewalld
+        enabled: yes
+
+    - name: Open ports
+      firewalld:
+        port: "{{ item }}"
+        permanent: true
+        state: enabled
+      with_items:
+        - 6443/tcp
+        - 2379-2380/tcp
+        - 10250/tcp
+        - 10259/tcp
+        - 10257/tcp
+        - 8472/udp
+
+
+    - name: Enable firewalld service
+      systemd:
+        state: restarted
+        daemon_reload: yes
+        name: firewalld
+        enabled: yes
+
+    - name: Open ports
+      firewalld:
+        port: "{{ item }}"
+        permanent: true
+        state: enabled
+      with_items:
+        - 10250/tcp
+        - 30000-32767/tcp
+        - 8472/udp
+        - 10257/tcp
+        - 10259/tcp

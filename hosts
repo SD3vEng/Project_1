@@ -1,0 +1,10 @@
+[master]
+IP-adress hosts
+
+[nodes]
+IP-adress hosts
+IP-adress hosts
+
+[all_groups:children]
+master
+nodes

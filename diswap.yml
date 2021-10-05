@@ -1,0 +1,19 @@
+---
+- name: Disable Swap
+  gather_facts: No
+  hosts: node3
+  become: yes
+
+  tasks:
+    - name: Disable SWAP
+      shell:
+        cmd: |
+          swapoff -a
+      args:
+        executable: /bin/bash
+
+    - name: Remove Swap from fstab
+      mount:
+        name: swap
+        fstype: swap
+        state: absent

@@ -1,6 +1,8 @@
 -
   name: install packages from Centos8
-  hosts: all_groups
+  hosts:
+    - test1
+    - master
   become: yes
   tasks:
     - name: install packages
@@ -151,23 +153,16 @@
         owner: enigma
 
     - name: Kubeadm token
-      shell: kubeadm token create --print-join-command
+      command: kubeadm token create --print-join-command
       register: kubeadm_token
-
-    - name: Set join command
-      set_fact:
-        kubeadm_token: "{{ kubeadm_token.stdout_lines[0] }}"
 
     - name: install weave pod network
       shell: export KUBECONFIG=/etc/kubernetes/admin.conf && export kubever=$(kubectl version | base64 | tr -d '\n') && kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$kubever"
 
 - name: Configure worker node
-  hosts: node3
+  hosts: test1
   become: yes
   tasks:
-
-    - name: kubeadm init phase kubelet-start
-      shell: sudo kubeadm init phase kubelet-start
 
     - name: Disable firewalld
       service:
@@ -176,4 +171,4 @@
         enabled: no
 
     - name: Print kubeadm token
-      shell: sudo "{{ hostvars['master'][kubeadm_token] }}"
+      shell: echo "{{ hostvars['master']['kubeadm_token']['stdout'] }}"
