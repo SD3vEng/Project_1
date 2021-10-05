@@ -1,5 +1,5 @@
 ---
 become: yes
 ansible_connection: ssh
-ansible_ssh_user: enigma
-ansible_become_password: pass
+ansible_ssh_user: username
+ansible_become_password: password 
