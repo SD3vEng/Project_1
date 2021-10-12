@@ -1,0 +1,200 @@
+-
+  name: install packages from Centos8
+  hosts: all_groups
+  become: yes
+  gather_facts: no
+  tasks:
+
+    - name: Disable firewalld
+      service:
+        name: firewalld
+        state: stopped
+        enabled: no
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+
+    - name: Disable SWAP
+      shell:
+        cmd: |
+          swapoff -a
+      args:
+        executable: /bin/bash
+
+    - name: Disable SWAP in fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^(?!#)(.*swap.*)'
+        replace: '# \1'
+
+    - name: Remove Swap from fstab
+      mount:
+        name: swap
+        fstype: swap
+        state: absent
+
+    - name: install packages
+      dnf:
+        name: "{{ packages_1 }}"
+        state: latest
+      vars:
+        packages_1:
+        - epel-release
+        - python3.9
+        - conntrack-tools
+        - dnf-utils
+        - ca-certificates
+        - device-mapper-persistent-data
+        - lvm2
+
+    - name: update pip and setuptools
+      pip:
+        name:
+          - pip
+          - setuptools
+        extra_args: --upgrade
+        executable: pip3
+
+    - name: update Centos8
+      dnf:
+        name: '*'
+        state: latest
+
+    - name: Add repository Docker
+      shell: yum-config-manager  --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+    - name: Install Docker
+      dnf:
+        name: "{{ packages_2 }}"
+        state: latest
+      vars:
+        packages_2:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+
+    - name: Start service docker
+      service:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Enabled service containerd
+      service:
+       name: containerd
+       enabled: yes
+       state: started
+
+    - name: Add user to Docker group
+      user:
+        name: enigma
+        group: docker
+        append: yes
+
+    - name: Configure Docker Daemon
+      shell:
+        cmd: |
+          cat <<EOF | sudo tee /etc/docker/daemon.json
+          {
+            "exec-opts": ["native.cgroupdriver=systemd"],
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "100m"
+            },
+            "storage-driver": "overlay2"
+          }
+          EOF
+
+    - name: Add Daemon-Reload
+      systemd: daemon_reload=yes
+
+    - name: Add repository k8s
+      yum_repository:
+        name: Kubernetes
+        description: k8s repo
+        baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+        gpgcheck: yes
+        gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        exclude: kubelet kubeadm kubectl
+        enabled: yes
+
+    - name: Install Kubernetes
+      shell:
+        cmd: sudo yum install -y kubelet kubeadm kubectl --disableexcludes=Kubernetes
+
+    - name: Start kubelet
+      service:
+        name: kubelet
+        enabled: yes
+        state: started
+
+    - name: Letting iptables see bridged traffic
+      shell: |
+        sudo modprobe br_netfilter
+        lsmod | grep br_netfilter
+
+    - name: Letting iptables see bridged traffic
+      shell:
+        cmd: |
+          cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          EOF
+          sudo sysctl --system
+
+    - name: Unconditionally reboot the machine with all defaults
+      reboot:
+        reboot_timeout: 300
+
+    - name: Kubeadm reset
+      shell: kubeadm reset -f
+
+- name: Configure Master node
+  hosts: master
+  become: yes
+  tasks:
+
+    - name: kubeadm init phase kubelet-start
+      shell: sudo kubeadm init phase kubelet-start
+
+    - name: Initialize the Kubernetes cluster using kubeadm
+      command: sudo kubeadm init --pod-network-cidr 10.245.0.0/16 --apiserver-advertise-address=10.70.40.76
+
+    - name: create .kube directory
+      file:
+        path: /home/enigma/.kube
+        state: directory
+        mode: 0755
+
+    - name: copy admin.conf to user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/enigma/.kube/config
+        remote_src: yes
+        owner: enigma
+
+    - name: Kubeadm token
+      shell: kubeadm token create --print-join-command
+      register: join_command_raw
+
+    - name: Set join command
+      set_fact:
+        join_command_raw: "{{ join_command_raw.stdout_lines[0] }}"
+
+    - name: install weave pod network
+      shell: export KUBECONFIG=/etc/kubernetes/admin.conf && export kubever=$(kubectl version | base64 | tr -d '\n') && kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$kubever"
+
+- name: Configure worker node
+  hosts: worker_nodes
+  become: yes
+  tasks:
+
+    - name: kubeadm init phase kubelet-start
+      shell: sudo kubeadm init phase kubelet-start
+
+    - name: join cluster
+      shell: "{{ hostvars['10.70.40.76'].join_command_raw }} >> node_joined.txt"
+      args:
+        chdir: /home/enigma/
+        creates: node_joined.txt
