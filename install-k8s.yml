@@ -2,9 +2,29 @@
   name: install packages from Centos8
   hosts: all_groups
   become: yes
-  gather_facts: no
   tasks:
-
+    - name: Install packages
+      dnf:
+        name: "{{ packages_1 }}"
+        state: latest
+      vars:
+        packages_1:
+        - python3.9
+        - python3-pip
+        - conntrack-tools
+        - dnf-utils
+        - ca-certificates
+        - device-mapper-persistent-data
+        - lvm2
+        
+    - name: update pip and setuptools
+      pip:
+        name:
+          - pip
+          - setuptools
+        extra_args: --upgrade
+        executable: pip3    
+        
     - name: Disable firewalld
       service:
         name: firewalld
@@ -34,29 +54,13 @@
         fstype: swap
         state: absent
 
-    - name: install packages
+    - name: install epel.
       dnf:
-        name: "{{ packages_1 }}"
-        state: latest
-      vars:
-        packages_1:
-        - epel-release
-        - python3.9
-        - conntrack-tools
-        - dnf-utils
-        - ca-certificates
-        - device-mapper-persistent-data
-        - lvm2
+        name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+        disable_gpg_check: yes
+        state: present    
 
-    - name: update pip and setuptools
-      pip:
-        name:
-          - pip
-          - setuptools
-        extra_args: --upgrade
-        executable: pip3
-
-    - name: update Centos8
+    - name: update Oracle 8.5
       dnf:
         name: '*'
         state: latest
@@ -146,9 +150,9 @@
     - name: Unconditionally reboot the machine with all defaults
       reboot:
         reboot_timeout: 300
-
+        
     - name: Kubeadm reset
-      shell: kubeadm reset -f
+      shell: kubeadm reset -f   
 
 - name: Configure Master node
   hosts: master
@@ -159,7 +163,7 @@
       shell: sudo kubeadm init phase kubelet-start
 
     - name: Initialize the Kubernetes cluster using kubeadm
-      command: sudo kubeadm init --pod-network-cidr 10.245.0.0/16 --apiserver-advertise-address=10.70.40.76
+      command: sudo kubeadm init --pod-network-cidr 10.245.0.0/16 --apiserver-advertise-address="IP-address master node"
 
     - name: create .kube directory
       file:
@@ -189,12 +193,12 @@
   hosts: worker_nodes
   become: yes
   tasks:
-
+  
     - name: kubeadm init phase kubelet-start
       shell: sudo kubeadm init phase kubelet-start
-
+      
     - name: join cluster
-      shell: "{{ hostvars['10.70.40.76'].join_command_raw }} >> node_joined.txt"
+      shell: "{{ hostvars['"IP-address master node"'].join_command_raw }} >> node_joined.txt"
       args:
         chdir: /home/enigma/
         creates: node_joined.txt
